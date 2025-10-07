@@ -173,3 +173,10 @@ cython_debug/
 # PyPI configuration file
 .pypirc
 .DS_Store
+
+# data downloaded from link in README
+/data
+example_mc.json
+
+# folder with drug databases
+/databases
