@@ -9,6 +9,7 @@ import numpy as np
 import time
 import rdkit.Chem as Chem
 import rdkit.Chem.AllChem as AllChem
+from rdkit.Chem import rdFingerprintGenerator
 import json
 import gzip
 import six
@@ -39,6 +40,8 @@ class SCScorer():
         self.FP_len = FP_len;
         self.FP_rad = FP_rad
         self._load_vars(weight_path)
+        
+        self.morgan_gen = AllChem.GetMorganGenerator(radius=FP_rad, fpSize=FP_len, includeChirality=True)
         # print('Restored variables from {}'.format(weight_path))
         if 'uint8' in weight_path or 'counts' in weight_path:
             def mol_to_fp(self, mol):
@@ -53,8 +56,7 @@ class SCScorer():
             def mol_to_fp(self, mol):
                 if mol is None:
                     return np.zeros((self.FP_len,), dtype=np.float32)
-                return np.array(AllChem.GetMorganFingerprintAsBitVect(mol, self.FP_rad, nBits=self.FP_len,
-                                                                      useChirality=True), dtype=bool)
+                return np.array(self.morgan_gen.GetFingerprint(mol), dtype=bool)
         self.mol_to_fp = mol_to_fp
 
         self._restored = True
