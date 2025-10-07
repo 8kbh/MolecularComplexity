@@ -11,23 +11,13 @@ from rdkit import Chem
 from rdkit import RDLogger
 
 
+tqdm.pandas()
+
 RDLogger.DisableLog('rdApp.*')
 
 logging.basicConfig(filename='add_mc.log', level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 
 predictor = get_predictor()
-
-def process_single_smiles(smiles):
-    is_valid_smiles = validate_smiles(str(smiles))
-    if not is_valid_smiles:
-        return None
-    try:
-        mc_prediction = predictor.predict([smiles,])
-        return mc_prediction[0]
-    except Exception as e:
-        logging.info(smiles)
-        logging.error(e)
-        return None
 
 
 def add_to_csv(filepath, rows):
@@ -75,7 +65,6 @@ def validate_smiles(smiles: str) -> bool:
 
 
 def main():
-
     parser = argparse.ArgumentParser(description="Add Molecular Complexity value to existing database")
 
     group = parser.add_mutually_exclusive_group(required=True)
@@ -87,7 +76,6 @@ def main():
     group2.add_argument("--smiles_field", "-f", type=str, help="Key of the dictionary where SMILES are stored (for JSON)")
 
     parser.add_argument("--skip_header", "-s", type=int, default=0, help="Number of header rows to be skipped (for CSV)")
-    parser.add_argument("--writing_batch", "-w", type=int, default=10, help="Batch size for writing results in file. Set 0 to write at the end")
     parser.add_argument("--processing_batch", "-p", type=int, default=10, help="Batch size for processing. Set 0 to process all simultaneously")
     # Define output argument
     parser.add_argument("--output", "-o", type=str, help="Name of the output file (optional)")
@@ -120,51 +108,32 @@ def main():
     # process csv
     if args.db_csv:
         df = pd.read_csv(args.db_csv, skiprows=args.skip_header, header=None)
-        if args.writing_batch == 0:
-            tqdm.pandas()
-            df[df.shape[1]] = df[args.smiles_column - 1].progress_apply(process_single_smiles)
-            df.to_csv(args.output, index=False, na_rep='N/A', encoding='utf-8', header=False)
-        else:
-            temp_data = []
-            for index, row in tqdm(df.iterrows(), total=df.shape[0]):
-                row_list = row.to_list()
-                if index + 1 >= args.writing_batch and index % args.writing_batch == 0:
-                    add_to_csv(args.output, temp_data)
-                    temp_data = []
-                prediction = process_single_smiles(row_list[args.smiles_column - 1])
-                temp_data.append(row_list + [prediction, ])
-            if len(temp_data) > 0:
-                add_to_csv(args.output, temp_data)
+        print("Validating SMILESes...")
 
+        df = df.rename(columns={args.smiles_column - 1: "smiles"})
+        df["is_valid_smiles"] = df[smiles].progress_apply(validate_smiles)
 
-    # process json
     if args.db_json:
         with open(args.db_json, "r", encoding="utf-8") as f:
             data = json.load(f)
-        temp_data = []
-        
-        if args.writing_batch == 0:
-            args.writing_batch = len(data)
 
-        for index, sample in enumerate(tqdm(data)):
-            if index + 1 >= args.writing_batch and index % args.writing_batch == 0:
-                add_to_json(args.output, temp_data)
-                temp_data = []
+        print("Validating SMILESes...")
+        valid_smiles = []
+        for entry in tqdm(data):
+            smiles = entry.get(args.smiles_field, "")
+            valid_smiles.append((smiles, validate_smiles(smiles)))
 
-            smiles = sample.get(args.smiles_field, None)
-            temp_data.append(data[index])
+        df = pd.DataFrame(valid_smiles, columns=["smiles", "is_valid_smiles"])
 
-            if not smiles:
-                temp_data[-1]["_MolecularComplexity"] = None
-            else:
-                temp_data[-1]["_MolecularComplexity"] = process_single_smiles(smiles)
-
-        if len(temp_data) > 0:
-            add_to_json(args.output, temp_data)
-
-    print("Done")
-    print(f"Output file: {args.output}")
-
+    valid_smiles_df = df[df["is_valid_smiles"]].copy()
+    valid_smiles_df["mc"] = 0.0
+    for i in range(0, valid_smiles_df.shape[0], args.processing_batch):
+        prediction = predictor.predict(valid_smiles_df["smiles"][i:i+args.processing_batch].to_list())
+        valid_smiles_df.iloc[i:i+args.processing_batch, valid_smiles_df.columns.get_loc("mc")] = prediction
+    
+    print(df.join(valid_smiles_df[["mc"]], how="left"))
+    # Если csv то объединяем и записываем каждый батч простым экспортом в csv
+    # Если json то генерируем новый json, добавляя в исходный json по индексу и записываем каждый батч
 
 if __name__ == "__main__":
     main()
