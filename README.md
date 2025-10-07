@@ -15,6 +15,18 @@ unzip data.zip
 rm data.zip
 ```
 
+### using [uv](https://docs.astral.sh/uv/)
+```bash
+uv sync
+uv pip install -e .
+```
+To launch scripts use `uv run`
+
+Ex.:
+```bash
+uv run scripts/add_mc.py --db_csv data/example_database.csv --skip_header 1 --smiles_column 5
+```
+
 ## Usage
 
 To calculate the molecular complexity of a list of smiles, run the following command:
@@ -28,6 +40,3 @@ To plot the results from the paper, run the scripts from `scripts` folder that b
 python scripts/plot_fda.py
 python scripts/plot_synthesis.py
 ```
-
-
-
