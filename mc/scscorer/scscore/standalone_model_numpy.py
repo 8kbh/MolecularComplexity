@@ -9,7 +9,6 @@ import numpy as np
 import time
 import rdkit.Chem as Chem
 import rdkit.Chem.AllChem as AllChem
-from rdkit.Chem import rdFingerprintGenerator
 import json
 import gzip
 import six
