@@ -37,15 +37,24 @@ def add_to_json(filepath, items):
         json.dump(init_data, f)
 
 
-def ask_append_replace(filename):
-    while True:
-        user_input = input(f"File {filename} already exists. Replace file (R) or append to file (A)? ").strip().lower()
-        if user_input == 'r':
-            return True
-        elif user_input == 'a':
-            return False
-        else:
-            print("Invalid input. Please enter 'R' or 'A'. Or interrupt to exit")
+def join_and_save_json(fp, dict, df):
+    json_joined = dict.copy()
+    
+    for i, row in enumerate(df.itertuples(), start=0):
+        json_joined[i]["_MolecularComplexity"] = row.mc
+    
+    with open(fp, "w", encoding="utf-8") as f:
+        json.dump(json_joined, f, ensure_ascii=False)
+
+
+def ask_replace(filename):
+    user_input = input(f"File {filename} already exists. Replace file? (N/y) ").strip().lower()
+    if user_input == 'y':
+        return True
+    else:
+        print("Exiting")
+        print("NOTE: you can specify output file name with option --output/-o")
+        exit()
 
 
 def validate_smiles(smiles: str) -> bool:
@@ -99,8 +108,9 @@ def main():
     print(f"Input file: {args.db_csv or args.db_json}")
     print(f"SMILES column/field: {args.smiles_column or args.smiles_field}")
     print(f"Output file: {args.output}")
+
     if os.path.exists(args.output):
-        to_replace = ask_append_replace(args.output)
+        to_replace = ask_replace(args.output)
         if to_replace:
             os.remove(args.output)
     print("Start processing")
@@ -111,15 +121,15 @@ def main():
         print("Validating SMILESes...")
 
         df = df.rename(columns={args.smiles_column - 1: "smiles"})
-        df["is_valid_smiles"] = df[smiles].progress_apply(validate_smiles)
+        df["is_valid_smiles"] = df["smiles"].progress_apply(validate_smiles)
 
     if args.db_json:
         with open(args.db_json, "r", encoding="utf-8") as f:
-            data = json.load(f)
+            data_json = json.load(f)
 
         print("Validating SMILESes...")
         valid_smiles = []
-        for entry in tqdm(data):
+        for entry in tqdm(data_json):
             smiles = entry.get(args.smiles_field, "")
             valid_smiles.append((smiles, validate_smiles(smiles)))
 
@@ -127,13 +137,29 @@ def main():
 
     valid_smiles_df = df[df["is_valid_smiles"]].copy()
     valid_smiles_df["mc"] = 0.0
-    for i in range(0, valid_smiles_df.shape[0], args.processing_batch):
+    
+    print()
+    print(f"Predicting molecular complexity (batched: {args.processing_batch}its)")
+    for i in tqdm(range(0, valid_smiles_df.shape[0], args.processing_batch)):
         prediction = predictor.predict(valid_smiles_df["smiles"][i:i+args.processing_batch].to_list())
         valid_smiles_df.iloc[i:i+args.processing_batch, valid_smiles_df.columns.get_loc("mc")] = prediction
+        last_calculated_row = valid_smiles_df.iloc[i:i+args.processing_batch].index[-1]
+
+        df_joined = df.join(valid_smiles_df[["mc"]], how="left").loc[:last_calculated_row]
+        # print(df_joined)
+        if args.db_csv:
+            df_joined.to_csv(args.output, index=False, header=None)
+
+        if args.db_json:
+            join_and_save_json(args.output, data_json, df_joined)
     
-    print(df.join(valid_smiles_df[["mc"]], how="left"))
-    # Если csv то объединяем и записываем каждый батч простым экспортом в csv
-    # Если json то генерируем новый json, добавляя в исходный json по индексу и записываем каждый батч
+    if(last_calculated_row < df.shape[0] - 1):
+        if args.db_csv:
+            df.join(valid_smiles_df[["mc"]], how="left").to_csv(args.output, index=False, header=None)
+
+        if args.db_json:
+            join_and_save_json(args.output, data_json, df.join(valid_smiles_df[["mc"]], how="left"))
+
 
 if __name__ == "__main__":
     main()
