@@ -58,6 +58,9 @@ def ask_replace(filename):
 
 
 def validate_smiles(smiles: str) -> bool:
+    if not isinstance(smiles, str):
+        return False
+
     # Step 1: Regex for allowed SMILES symbols (simplified version)
     pattern = r'^[A-Za-z0-9@+\-\[\]\(\)\\\/%=#$]+$'
     if len(smiles) == 0 or not re.fullmatch(pattern, smiles):
