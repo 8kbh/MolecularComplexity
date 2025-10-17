@@ -1,15 +1,14 @@
-import json
 import argparse
-import pandas as pd
-from utils import get_predictor
-from tqdm.autonotebook import tqdm
-import logging
 import csv
+import json
+import logging
 import os
 import re
-from rdkit import Chem
-from rdkit import RDLogger
 
+import pandas as pd
+from rdkit import Chem, RDLogger
+from tqdm.autonotebook import tqdm
+from utils import get_predictor
 
 tqdm.pandas()
 
@@ -39,10 +38,10 @@ def add_to_json(filepath, items):
 
 def join_and_save_json(fp, dict, df):
     json_joined = dict.copy()
-    
+
     for i, row in enumerate(df.itertuples(), start=0):
         json_joined[i]["_MolecularComplexity"] = row.mc
-    
+
     with open(fp, "w", encoding="utf-8") as f:
         json.dump(json_joined, f, ensure_ascii=False)
 
@@ -140,13 +139,13 @@ def main():
 
     valid_smiles_df = df[df["is_valid_smiles"]].copy()
     valid_smiles_df["mc"] = 0.0
-    
+
     print()
     print(f"Predicting molecular complexity (batched: {args.processing_batch}its)")
     for i in tqdm(range(0, valid_smiles_df.shape[0], args.processing_batch)):
-        prediction = predictor.predict(valid_smiles_df["smiles"][i:i+args.processing_batch].to_list())
-        valid_smiles_df.iloc[i:i+args.processing_batch, valid_smiles_df.columns.get_loc("mc")] = prediction
-        last_calculated_row = valid_smiles_df.iloc[i:i+args.processing_batch].index[-1]
+        prediction = predictor.predict(valid_smiles_df["smiles"][i:i + args.processing_batch].to_list())
+        valid_smiles_df.iloc[i:i + args.processing_batch, valid_smiles_df.columns.get_loc("mc")] = prediction
+        last_calculated_row = valid_smiles_df.iloc[i:i + args.processing_batch].index[-1]
 
         df_joined = df.join(valid_smiles_df[["mc"]], how="left").loc[:last_calculated_row]
         # print(df_joined)
@@ -155,8 +154,8 @@ def main():
 
         if args.db_json:
             join_and_save_json(args.output, data_json, df_joined)
-    
-    if(last_calculated_row < df.shape[0] - 1):
+
+    if (last_calculated_row < df.shape[0] - 1):
         if args.db_csv:
             df.join(valid_smiles_df[["mc"]], how="left").to_csv(args.output, index=False, header=None)
 
