@@ -43,6 +43,7 @@ rm data.zip
 
 ## Usage
 
+### Simple calculate
 To calculate the molecular complexity of a list of smiles, run the following command:
 ```bash
 python scripts/calculate.py --txt_with_smiles data/example_smiles.txt
@@ -54,3 +55,20 @@ To plot the results from the paper, run the scripts from `scripts` folder that b
 python scripts/plot_fda.py
 python scripts/plot_synthesis.py
 ```
+
+### Add Molecular Complexity value to existing CSV/JSON file
+
+```bash
+uv run scripts/add_mc.py [OPTIONS]
+```
+
+| Option                     | Description                                      | Default Value |
+|----------------------------|--------------------------------------------------|---------------|
+| `--db_csv -t`              | Path to the CSV database file                    |               |
+| `--db_json -d`             | Path to the JSON database file                   |               |
+| `--smiles_column -c`       | Column number where SMILES are stored (for CSV)  |               |
+| `--smiles_field -f`        | Dictionary key where SMILES are stored (for JSON)|               |
+| `--skip_header -s`         | Number of header rows to skip (for CSV)          | 0             |
+| `--processing_batch -p`    | Batch size for processing                        | 10            |
+| `--output -o`              | Name of the output file (optional)               |               |
+

@@ -87,7 +87,7 @@ def main():
     group2.add_argument("--smiles_field", "-f", type=str, help="Key of the dictionary where SMILES are stored (for JSON)")
 
     parser.add_argument("--skip_header", "-s", type=int, default=0, help="Number of header rows to be skipped (for CSV)")
-    parser.add_argument("--processing_batch", "-p", type=int, default=10, help="Batch size for processing. Set 0 to process all simultaneously")
+    parser.add_argument("--processing_batch", "-p", type=int, default=10, help="Batch size for processing")
     # Define output argument
     parser.add_argument("--output", "-o", type=str, help="Name of the output file (optional)")
 
