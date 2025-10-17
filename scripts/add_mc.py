@@ -1,33 +1,22 @@
-import json
 import argparse
-import pandas as pd
-from utils import get_predictor
-from tqdm.autonotebook import tqdm
-import logging
 import csv
+import json
+import logging
 import os
 import re
-from rdkit import Chem
-from rdkit import RDLogger
 
+import pandas as pd
+from rdkit import Chem, RDLogger
+from tqdm.autonotebook import tqdm
+from utils import get_predictor
+
+tqdm.pandas()
 
 RDLogger.DisableLog('rdApp.*')
 
 logging.basicConfig(filename='add_mc.log', level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 
 predictor = get_predictor()
-
-def process_single_smiles(smiles):
-    is_valid_smiles = validate_smiles(str(smiles))
-    if not is_valid_smiles:
-        return None
-    try:
-        mc_prediction = predictor.predict([smiles,])
-        return mc_prediction[0]
-    except Exception as e:
-        logging.info(smiles)
-        logging.error(e)
-        return None
 
 
 def add_to_csv(filepath, rows):
@@ -47,18 +36,30 @@ def add_to_json(filepath, items):
         json.dump(init_data, f)
 
 
-def ask_append_replace(filename):
-    while True:
-        user_input = input(f"File {filename} already exists. Replace file (R) or append to file (A)? ").strip().lower()
-        if user_input == 'r':
-            return True
-        elif user_input == 'a':
-            return False
-        else:
-            print("Invalid input. Please enter 'R' or 'A'. Or interrupt to exit")
+def join_and_save_json(fp, dict, df):
+    json_joined = dict.copy()
+
+    for i, row in enumerate(df.itertuples(), start=0):
+        json_joined[i]["_MolecularComplexity"] = row.mc
+
+    with open(fp, "w", encoding="utf-8") as f:
+        json.dump(json_joined, f, ensure_ascii=False)
+
+
+def ask_replace(filename):
+    user_input = input(f"File {filename} already exists. Replace file? (N/y) ").strip().lower()
+    if user_input == 'y':
+        return True
+    else:
+        print("Exiting")
+        print("NOTE: you can specify output file name with option --output/-o")
+        exit()
 
 
 def validate_smiles(smiles: str) -> bool:
+    if not isinstance(smiles, str):
+        return False
+
     # Step 1: Regex for allowed SMILES symbols (simplified version)
     pattern = r'^[A-Za-z0-9@+\-\[\]\(\)\\\/%=#$]+$'
     if len(smiles) == 0 or not re.fullmatch(pattern, smiles):
@@ -75,7 +76,6 @@ def validate_smiles(smiles: str) -> bool:
 
 
 def main():
-
     parser = argparse.ArgumentParser(description="Add Molecular Complexity value to existing database")
 
     group = parser.add_mutually_exclusive_group(required=True)
@@ -86,8 +86,8 @@ def main():
     group2.add_argument("--smiles_column", "-c", type=int, help="Number of the column in which SMILES are stored (for CSV)")
     group2.add_argument("--smiles_field", "-f", type=str, help="Key of the dictionary where SMILES are stored (for JSON)")
 
-    parser.add_argument("--skip_header", "-s", type=int, help="Number of header rows to be skipped (for CSV)")
-    parser.add_argument("--writing_batch", "-w", type=int, default=10, help="Batch size for writing results in file. Set 0 to write at the end")
+    parser.add_argument("--skip_header", "-s", type=int, default=0, help="Number of header rows to be skipped (for CSV)")
+    parser.add_argument("--processing_batch", "-p", type=int, default=10, help="Batch size for processing. Set 0 to process all simultaneously")
     # Define output argument
     parser.add_argument("--output", "-o", type=str, help="Name of the output file (optional)")
 
@@ -106,15 +106,13 @@ def main():
         elif args.db_json:
             args.output = args.db_json.replace('.json', '_mc.json')
 
-    if not args.skip_header:
-        args.skip_header = 0
-
     # Your processing logic here
     print(f"Input file: {args.db_csv or args.db_json}")
     print(f"SMILES column/field: {args.smiles_column or args.smiles_field}")
     print(f"Output file: {args.output}")
+
     if os.path.exists(args.output):
-        to_replace = ask_append_replace(args.output)
+        to_replace = ask_replace(args.output)
         if to_replace:
             os.remove(args.output)
     print("Start processing")
@@ -122,50 +120,47 @@ def main():
     # process csv
     if args.db_csv:
         df = pd.read_csv(args.db_csv, skiprows=args.skip_header, header=None)
-        if args.writing_batch == 0:
-            tqdm.pandas()
-            df[df.shape[1]] = df[args.smiles_column - 1].progress_apply(process_single_smiles)
-            df.to_csv(args.output, index=False, na_rep='N/A', encoding='utf-8', header=False)
-        else:
-            temp_data = []
-            for index, row in tqdm(df.iterrows(), total=df.shape[0]):
-                row_list = row.to_list()
-                if index + 1 >= args.writing_batch and index % args.writing_batch == 0:
-                    add_to_csv(args.output, temp_data)
-                    temp_data = []
-                prediction = process_single_smiles(row_list[args.smiles_column - 1])
-                temp_data.append(row_list + [prediction, ])
-            if len(temp_data) > 0:
-                add_to_csv(args.output, temp_data)
+        print("Validating SMILESes...")
 
+        df = df.rename(columns={args.smiles_column - 1: "smiles"})
+        df["is_valid_smiles"] = df["smiles"].progress_apply(validate_smiles)
 
-    # process json
     if args.db_json:
         with open(args.db_json, "r", encoding="utf-8") as f:
-            data = json.load(f)
-        temp_data = []
-        
-        if args.writing_batch == 0:
-            args.writing_batch = len(data)
+            data_json = json.load(f)
 
-        for index, sample in enumerate(tqdm(data)):
-            if index + 1 >= args.writing_batch and index % args.writing_batch == 0:
-                add_to_json(args.output, temp_data)
-                temp_data = []
+        print("Validating SMILESes...")
+        valid_smiles = []
+        for entry in tqdm(data_json):
+            smiles = entry.get(args.smiles_field, "")
+            valid_smiles.append((smiles, validate_smiles(smiles)))
 
-            smiles = sample.get(args.smiles_field, None)
-            temp_data.append(data[index])
+        df = pd.DataFrame(valid_smiles, columns=["smiles", "is_valid_smiles"])
 
-            if not smiles:
-                temp_data[-1]["_MolecularComplexity"] = None
-            else:
-                temp_data[-1]["_MolecularComplexity"] = process_single_smiles(smiles)
+    valid_smiles_df = df[df["is_valid_smiles"]].copy()
+    valid_smiles_df["mc"] = 0.0
 
-        if len(temp_data) > 0:
-            add_to_json(args.output, temp_data)
+    print()
+    print(f"Predicting molecular complexity (batched: {args.processing_batch}its)")
+    for i in tqdm(range(0, valid_smiles_df.shape[0], args.processing_batch)):
+        prediction = predictor.predict(valid_smiles_df["smiles"][i:i + args.processing_batch].to_list())
+        valid_smiles_df.iloc[i:i + args.processing_batch, valid_smiles_df.columns.get_loc("mc")] = prediction
+        last_calculated_row = valid_smiles_df.iloc[i:i + args.processing_batch].index[-1]
 
-    print("Done")
-    print(f"Output file: {args.output}")
+        df_joined = df.join(valid_smiles_df[["mc"]], how="left").loc[:last_calculated_row]
+        # print(df_joined)
+        if args.db_csv:
+            df_joined.to_csv(args.output, index=False, header=None)
+
+        if args.db_json:
+            join_and_save_json(args.output, data_json, df_joined)
+
+    if (last_calculated_row < df.shape[0] - 1):
+        if args.db_csv:
+            df.join(valid_smiles_df[["mc"]], how="left").to_csv(args.output, index=False, header=None)
+
+        if args.db_json:
+            join_and_save_json(args.output, data_json, df.join(valid_smiles_df[["mc"]], how="left"))
 
 
 if __name__ == "__main__":
