@@ -9,6 +9,8 @@ authors = [
 dependencies = [
     "catboost>=1.2.8",
     "datamol>=0.12.5",
+    "flask>=3.1.2",
+    "flask-cors>=6.0.1",
     "pandas>=2.3.3",
     "pyarrow>=21.0.0",
     "scikit-learn==1.4.1.post1",
