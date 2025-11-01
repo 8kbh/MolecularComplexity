@@ -9,6 +9,10 @@ import logging
 import random
 import pickle
 from mc.analyzers import Predictor
+import os
+
+
+script_dir = os.path.dirname(os.path.abspath(__file__))
 
 
 def load_file(path: str, type="pickle"):
@@ -75,7 +79,7 @@ def upload_file():
     if file_type == 'json' and not smiles_field:
         return jsonify({'error': 'SMILES field is required for JSON'}), 400
 
-    temp_file_path = f'temp_{"".join(random.choice("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ1234567890") for _ in range(5))}.{file_type}'
+    temp_file_path = os.path.join(script_dir, f'temp_{"".join(random.choice("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ1234567890") for _ in range(5))}.{file_type}')
     file.save(temp_file_path)
 
     output_file_path = temp_file_path.replace('.csv', '_mc.csv').replace('.json', '_mc.json')
