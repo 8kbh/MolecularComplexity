@@ -141,5 +141,13 @@ def join_and_save_json(fp, dict_data, df):
         json.dump(json_joined, f, ensure_ascii=False)
 
 
+@app.route('/single-prediction', methods=['POST'])
+def single_prediction():
+    data = request.get_json()
+    smiles = data.get("smiles")
+    prediction = predictor.predict([smiles,])[0]
+    return jsonify({"molecular_complexity": prediction})
+
+
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000, debug=True)
